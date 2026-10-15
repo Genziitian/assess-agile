@@ -8,11 +8,20 @@ ns=assess-agile
 app=$(sed -n 's/.*"app": "\([^"]*\)".*/\1/p' "$q/app.json")
 port=$(sed -n 's/.*"nodePort": \([0-9]*\).*/\1/p' "$q/app.json")
 k() { kubectl -n "$ns" "$@"; }
-verify_service() {
-  # Verifies real service routing from a Pod; NodePort is verified separately on host.
+verify_endpoint() {
+  # EndpointSlice and kube-proxy updates can lag a healthy Deployment.
   k run "verify-$app-$(date +%s)" --rm -i --restart=Never --image=busybox:1.37 --quiet \
-    --command -- sh -c "wget -qO- http://$app/healthz && wget -qO- http://$app/ | grep 'data-release=\"$1\"'"
+    --env="SERVICE=$1" --env="EXPECTED=$2" --command -- sh -c '
+      for i in $(seq 1 20); do
+        if wget -T 2 -qO- "http://$SERVICE/healthz" >/dev/null &&
+           wget -T 2 -qO- "http://$SERVICE/" | grep -q "data-release=\"$EXPECTED\""; then
+          echo "PASS service $SERVICE HTTP health and release $EXPECTED"; exit 0
+        fi
+        sleep 2
+      done
+      exit 1'
 }
+verify_service() { verify_endpoint "$app" "$1"; }
 if [ "$app" = food ]; then
   active=$(k get svc food -o jsonpath='{.spec.selector.color}')
   target=green; [ "$active" != green ] || target=blue
@@ -43,7 +52,7 @@ spec:
     - port: 80
       targetPort: 80
 EOF
-  if ! k run "preview-$(date +%s)" --rm -i --restart=Never --image=busybox:1.37 --quiet --command -- sh -c "wget -qO- http://food-preview/healthz && wget -qO- http://food-preview/ | grep 'data-release=\"$expected\"'"; then
+  if ! verify_endpoint food-preview "$expected"; then
     k scale "deployment/food-$target" --replicas=0
     k set image "deployment/food-$target" "web=$oldimage"
     verify_service "$oldversion"
