@@ -3,7 +3,7 @@ pipeline {
   options { disableConcurrentBuilds(); timestamps(); skipDefaultCheckout(true) }
   triggers { pollSCM('* * * * *') }
   parameters {
-    choice(name: 'RELEASE', choices: ['v1', 'v2', 'faulty'], description: 'Faulty is an intentional readiness failure for rollback demonstration')
+    choice(name: 'RELEASE', choices: ['v2', 'v1', 'faulty'], description: 'Faulty is an intentional readiness failure for rollback demonstration')
   }
   environment {
     PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/Users/sriram/.docker/bin:${env.PATH}"
