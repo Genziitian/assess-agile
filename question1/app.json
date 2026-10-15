@@ -1,0 +1,6 @@
+{
+  "app": "university",
+  "replicas": 2,
+  "nodePort": 30017,
+  "title": "University Learning Management Portal"
+}

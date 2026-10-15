@@ -1,0 +1,80 @@
+pipeline {
+  agent any
+  options { disableConcurrentBuilds(); timestamps(); skipDefaultCheckout(true) }
+  triggers { pollSCM('* * * * *') }
+  parameters {
+    choice(name: 'RELEASE', choices: ['v1', 'v2', 'faulty'], description: 'Faulty is an intentional readiness failure for rollback demonstration')
+  }
+  environment {
+    PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/Users/sriram/.docker/bin:${env.PATH}"
+    DOCKER_USER = 'sriram24mis'
+    APP = 'food'
+    QUESTION = 'question2'
+  }
+  stages {
+    stage('Clone Code') {
+      steps {
+        git branch: 'main', url: 'https://github.com/Genziitian/assess-agile.git'
+        script {
+          env.IMAGE_TAG = "${params.RELEASE}-${env.BUILD_NUMBER}-${sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()}"
+          env.IMAGE = "${env.DOCKER_USER}/assess-${env.APP}:${env.IMAGE_TAG}"
+        }
+      }
+    }
+    stage('Build Docker Image') {
+      steps {
+        script {
+          if (params.RELEASE == 'faulty') {
+            sh 'docker build -f "$QUESTION/Dockerfile.faulty" -t "$IMAGE" "$QUESTION"'
+          } else {
+            def html = params.RELEASE == 'v2' ? 'index.v2.html' : 'index.html'
+            withEnv(["HTML_FILE=${html}"]) { sh 'docker build --build-arg HTML_FILE="$HTML_FILE" -t "$IMAGE" "$QUESTION"' }
+          }
+        }
+      }
+    }
+    stage('Test Application') {
+      steps {
+        script {
+          if (params.RELEASE == 'faulty') {
+            // Explicit fault-injection run: confirm expected failing health endpoint.
+            sh 'if sh scripts/test-container.sh "$IMAGE" "$APP"; then echo "Fault not reproduced"; exit 1; fi'
+          } else {
+            sh 'sh scripts/test-container.sh "$IMAGE" "$APP"'
+          }
+        }
+      }
+    }
+    stage('Push Image') {
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'HUB_USER', passwordVariable: 'HUB_TOKEN')]) {
+          sh '''
+            set +x
+            export DOCKER_CONFIG=$(mktemp -d)
+            trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+            printf '%s' "$HUB_TOKEN" | docker login -u "$HUB_USER" --password-stdin
+            docker push "$IMAGE"
+          '''
+        }
+      }
+    }
+    stage('Deploy and Verify or Roll Back') {
+      steps {
+        withCredentials([file(credentialsId: 'k8s-config-file', variable: 'KUBECONFIG')]) {
+          sh '''
+            kubectl get namespace assess-agile >/dev/null 2>&1 || kubectl create namespace assess-agile
+            # Bootstrap only once: reapplying on every release could reset the active slot.
+            if ! kubectl -n assess-agile get service "$APP" >/dev/null 2>&1; then
+              kubectl apply -f "$QUESTION/deployment.yaml"
+            fi
+            sh scripts/deploy.sh "$QUESTION" "$IMAGE" "$RELEASE"
+          '''
+        }
+      }
+    }
+  }
+  post {
+    always { sh 'docker image ls --filter "reference=$IMAGE" || true' }
+    failure { echo 'Release failed. See deployment stage for automatic recovery result.' }
+  }
+}

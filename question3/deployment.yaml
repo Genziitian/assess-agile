@@ -1,0 +1,95 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "hospital",
+    "namespace": "assess-agile"
+  },
+  "spec": {
+    "replicas": 3,
+    "revisionHistoryLimit": 5,
+    "progressDeadlineSeconds": 60,
+    "strategy": {
+      "type": "RollingUpdate",
+      "rollingUpdate": {
+        "maxSurge": 1,
+        "maxUnavailable": 0
+      }
+    },
+    "selector": {
+      "matchLabels": {
+        "app": "hospital"
+      }
+    },
+    "template": {
+      "metadata": {
+        "labels": {
+          "app": "hospital"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "web",
+            "image": "sriram24mis/assess-hospital:v1",
+            "imagePullPolicy": "IfNotPresent",
+            "ports": [
+              {
+                "containerPort": 80
+              }
+            ],
+            "resources": {
+              "requests": {
+                "cpu": "20m",
+                "memory": "24Mi"
+              },
+              "limits": {
+                "cpu": "200m",
+                "memory": "64Mi"
+              }
+            },
+            "readinessProbe": {
+              "httpGet": {
+                "path": "/healthz",
+                "port": 80
+              },
+              "initialDelaySeconds": 2,
+              "periodSeconds": 3
+            },
+            "livenessProbe": {
+              "httpGet": {
+                "path": "/healthz",
+                "port": 80
+              },
+              "initialDelaySeconds": 5,
+              "periodSeconds": 5,
+              "failureThreshold": 3
+            }
+          }
+        ]
+      }
+    }
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "Service",
+  "metadata": {
+    "name": "hospital",
+    "namespace": "assess-agile"
+  },
+  "spec": {
+    "type": "NodePort",
+    "selector": {
+      "app": "hospital"
+    },
+    "ports": [
+      {
+        "port": 80,
+        "targetPort": 80,
+        "nodePort": 30019
+      }
+    ]
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "app": "hospital",
+  "replicas": 3,
+  "nodePort": 30019,
+  "title": "Hospital Appointment Portal"
+}

@@ -1,0 +1,6 @@
+{
+  "app": "food",
+  "replicas": 3,
+  "nodePort": 30018,
+  "title": "Online Food Ordering Portal"
+}
